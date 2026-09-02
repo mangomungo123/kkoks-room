@@ -17,9 +17,6 @@
     overscroll-behavior:none; }
   #app{ display:flex; flex-direction:column; height:100dvh; max-width:640px; margin:0 auto; position:relative; }
 
-  header{ padding:12px 16px 8px; flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); }
-  header h1{ font-size:17px; font-weight:600; margin:0; letter-spacing:-0.2px; }
-  header .proj-actions{ display:flex; gap:8px; }
   .icon-btn{ width:34px; height:34px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); display:flex; align-items:center; justify-content:center; font-size:16px; cursor:pointer; }
   .icon-btn:active{ background:var(--surface-2); }
 
@@ -73,6 +70,7 @@
   .calib-line{ position:absolute; left:0; right:0; height:0; border-top:2px solid var(--accent); box-shadow:0 0 0 1px rgba(0,0,0,0.4); }
 
   #count-screen{ flex:1 1 auto; min-height:0; overflow-y:auto; padding:22px 18px calc(18px + env(safe-area-inset-bottom)); display:none; }
+  .count-top-row{ display:flex; align-items:center; gap:8px; margin-bottom:16px; }
   #progress-track{ height:5px; background:var(--surface-2); border-radius:3px; overflow:hidden; margin-bottom:22px; display:none; }
   #progress-fill{ height:100%; background:var(--accent); width:0%; }
   .main-counter{ display:flex; align-items:center; justify-content:center; gap:22px; padding:10px 0 26px; }
@@ -108,14 +106,6 @@
 <body>
 <div id="app">
 
-  <header>
-    <h1 id="proj-title">단수 카운터</h1>
-    <div class="proj-actions">
-      <button class="icon-btn" id="reload-pdf-btn" title="도안 교체">📄</button>
-      <button class="icon-btn" id="reset-btn" title="초기화">↺</button>
-    </div>
-  </header>
-
   <div id="tabbar">
     <button id="tab-view" class="active">도안</button>
     <button id="tab-count">카운터</button>
@@ -143,6 +133,7 @@
       <div class="toolbar-row">
         <button class="tool-btn" id="resel-btn">영역 재지정</button>
         <button class="tool-btn active" id="highlight-toggle">하이라이트 켬</button>
+        <button class="icon-btn" id="reload-pdf-btn" title="도안 교체" style="margin-left:auto;">📄</button>
       </div>
     </div>
 
@@ -174,6 +165,10 @@
   </div>
 
   <div id="count-screen">
+    <div class="count-top-row">
+      <button class="tool-btn" id="target-btn">목표 단수</button>
+      <button class="tool-btn" id="reset-btn" style="margin-left:auto;">초기화</button>
+    </div>
     <div id="progress-track"><div id="progress-fill"></div></div>
     <div class="main-counter">
       <button class="step-btn" id="row-minus">－</button>
@@ -183,7 +178,7 @@
       </div>
       <button class="step-btn" id="row-plus">＋</button>
     </div>
-    <div id="section-label">무늬 카운터 (제목 더블탭 : 목표 단수 설정)</div>
+    <div id="section-label">무늬 카운터</div>
     <div id="pattern-counters"></div>
   </div>
 
@@ -261,7 +256,7 @@ function positionFixedOverlays(){
   const appRect = el('app').getBoundingClientRect();
   const toolbar = el('page-toolbar');
   const toolbarVisible = toolbar.offsetParent !== null;
-  const top = (toolbarVisible ? toolbar.getBoundingClientRect().bottom : appRect.top + 96) + 8;
+  const top = (toolbarVisible ? toolbar.getBoundingClientRect().bottom : appRect.top + 50) + 8;
   const leftPx = appRect.left + 8;
   const rightPx = (window.innerWidth - appRect.right) + 8;
   ['calib-bar','inline-banner'].forEach(id=>{
@@ -365,7 +360,7 @@ el('reset-btn').onclick=()=>{
     updateRowUI(); renderPatternCounters(); saveProject();
   }
 };
-el('proj-title').ondblclick=()=>{ el('target-input').value = project.targetRows||''; el('target-dialog').showModal(); };
+el('target-btn').onclick=()=>{ el('target-input').value = project.targetRows||''; el('target-dialog').showModal(); };
 el('target-cancel').onclick=()=>el('target-dialog').close();
 el('target-confirm').onclick=()=>{
   const v=parseInt(el('target-input').value,10);
