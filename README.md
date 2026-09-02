@@ -510,8 +510,46 @@ const holder = el('canvas-holder');
 let longPressTimer=null, longPressFired=false, longPressStartY=null;
 const LONG_PRESS_MS = 420, MOVE_CANCEL_PX = 10;
 
+/* pinch-to-zoom (two-finger) */
+const activePointers = new Map();
+let pinching=false, pinchStartDist=0, pinchStartZoom=1, currentPinchZoom=null;
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+async function finalizePinchZoom(){
+  if(currentPinchZoom!=null){
+    const z = +currentPinchZoom.toFixed(2);
+    if(Math.abs(z-(project.zoom||1))>0.01){
+      project.zoom = z; updateZoomLabel(); saveProject();
+      if(pdfDoc) await renderPage(currentPage);
+    }
+  }
+  currentPinchZoom=null; pointerDownPos=null;
+}
+function releasePointer(e){
+  activePointers.delete(e.pointerId);
+  if(pinching && activePointers.size<2){
+    pinching=false;
+    holder.style.transform=''; holder.style.transformOrigin='';
+    finalizePinchZoom();
+  }
+}
+
 holder.addEventListener('pointerdown', (e)=>{
-  if(calibActive) return;
+  activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(activePointers.size>=2){
+    if(!selecting && !calibActive){
+      pinching = true;
+      clearTimeout(longPressTimer); longPressTimer=null; longPressFired=false;
+      dragStart=null; dragCur=null; pointerDownPos=null;
+      const pts = Array.from(activePointers.values());
+      pinchStartDist = dist(pts[0],pts[1]);
+      pinchStartZoom = project.zoom||1; currentPinchZoom = pinchStartZoom;
+      const rect = holder.getBoundingClientRect();
+      const midX = (pts[0].x+pts[1].x)/2-rect.left, midY=(pts[0].y+pts[1].y)/2-rect.top;
+      holder.style.transformOrigin = `${midX}px ${midY}px`;
+    }
+    return;
+  }
+  if(pinching || calibActive) return;
   const rect = el('pdf-canvas').getBoundingClientRect();
   pointerDownPos = {x:e.clientX, y:e.clientY};
   if(selecting){
@@ -532,6 +570,16 @@ holder.addEventListener('pointerdown', (e)=>{
   }
 });
 holder.addEventListener('pointermove', (e)=>{
+  if(activePointers.has(e.pointerId)) activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinching && activePointers.size>=2){
+    const pts = Array.from(activePointers.values()).slice(0,2);
+    const d = dist(pts[0], pts[1]);
+    let newZoom = pinchStartZoom * (d/pinchStartDist);
+    newZoom = Math.min(3, Math.max(0.5, newZoom));
+    currentPinchZoom = newZoom;
+    holder.style.transform = `scale(${newZoom/pinchStartZoom})`;
+    return;
+  }
   if(selecting && dragStart){
     const rect = el('pdf-canvas').getBoundingClientRect();
     dragCur = { xf:(e.clientX-rect.left)/rect.width, yf:(e.clientY-rect.top)/rect.height };
@@ -548,10 +596,13 @@ holder.addEventListener('pointermove', (e)=>{
     if(Math.hypot(dx,dy) > MOVE_CANCEL_PX){ clearTimeout(longPressTimer); longPressTimer=null; }
   }
 });
-holder.addEventListener('pointercancel', ()=>{ clearTimeout(longPressTimer); longPressTimer=null; });
+holder.addEventListener('pointercancel', (e)=>{ releasePointer(e); clearTimeout(longPressTimer); longPressTimer=null; });
 holder.addEventListener('contextmenu', (e)=>e.preventDefault());
 holder.addEventListener('pointerup', async (e)=>{
+  const wasPinching = pinching;
+  releasePointer(e);
   clearTimeout(longPressTimer); longPressTimer=null;
+  if(wasPinching) return;
   if(calibActive) return;
   if(selecting && dragStart && dragCur){
     const x0=Math.min(dragStart.xf,dragCur.xf), x1=Math.max(dragStart.xf,dragCur.xf);
@@ -567,21 +618,15 @@ holder.addEventListener('pointerup', async (e)=>{
   if(longPressFired){ longPressFired=false; pointerDownPos=null; return; }
   if(pointerDownPos){
     const dx=e.clientX-pointerDownPos.x, dy=e.clientY-pointerDownPos.y;
-    const adx=Math.abs(dx), ady=Math.abs(dy);
     if(Math.hypot(dx,dy) < 8){
       const rect = el('pdf-canvas').getBoundingClientRect();
       const yFrac = (e.clientY-rect.top)/rect.height;
       handleTap(yFrac);
-    } else if(adx > 55 && adx > ady*1.5){
-      const cs = el('canvas-scroll');
-      const atLeftEdge = cs.scrollLeft <= 2;
-      const atRightEdge = cs.scrollLeft >= (cs.scrollWidth - cs.clientWidth - 2);
-      if(dx < 0 && atRightEdge && currentPage < numPages){ goToPage(currentPage+1); }
-      else if(dx > 0 && atLeftEdge && currentPage > 1){ goToPage(currentPage-1); }
     }
   }
   pointerDownPos=null;
 });
+
 
 function getCurrentSegment(){
   const st = getPageState(currentPage);
