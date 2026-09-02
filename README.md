@@ -1,6 +1,3 @@
-# kkoks-room
-
-<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -59,7 +56,6 @@
   #inline-banner button{ margin-top:8px; }
   #toast{ position:fixed; left:50%; top:140px; transform:translateX(-50%); background:rgba(33,31,38,0.94); border:1px solid var(--border); color:var(--ink); font-size:12.5px; padding:7px 13px; border-radius:20px; opacity:0; transition:opacity 0.2s ease; pointer-events:none; z-index:16; white-space:nowrap; }
   #toast.show{ opacity:1; }
-  #undo-fab{ position:fixed; right:20px; bottom:20px; width:44px; height:44px; border-radius:50%; background:var(--surface); border:1px solid var(--border); color:var(--ink); font-size:18px; display:none; align-items:center; justify-content:center; z-index:15; box-shadow:0 4px 14px rgba(0,0,0,0.4); }
 
   #calib-bar{ position:fixed; left:8px; right:8px; top:140px; z-index:18; background:rgba(33,31,38,0.96); border:1px solid var(--accent); border-radius:12px; padding:10px 12px; display:none; flex-direction:column; gap:9px; }
   #calib-bar .calib-hint{ font-size:11.5px; color:var(--ink-muted); line-height:1.4; }
@@ -173,7 +169,6 @@
           </div>
         </div>
         <div id="toast"></div>
-        <button id="undo-fab">－1</button>
       </div>
     </div>
   </div>
@@ -265,8 +260,6 @@ function positionFixedOverlays(){
   const toastEl = el('toast');
   toastEl.style.left = (appRect.left + appRect.width/2)+'px';
   toastEl.style.top = top+'px';
-  const fab = el('undo-fab');
-  fab.style.right = (rightPx+4)+'px';
 }
 window.addEventListener('resize', positionFixedOverlays);
 window.addEventListener('orientationchange', positionFixedOverlays);
@@ -354,7 +347,6 @@ function changeRow(delta){
 el('row-plus').onclick=()=>changeRow(1);
 el('row-minus').onclick=()=>changeRow(-1);
 el('row-tap').onclick=()=>changeRow(1);
-el('undo-fab').onclick=()=>changeRow(-1);
 
 el('reset-btn').onclick=()=>{
   if(confirm('메인 단수와 모든 무늬 카운터를 0으로 되돌릴까요? (도안/인식 결과는 유지돼요)')){
@@ -750,10 +742,9 @@ async function tryAutoDetectText(page, viewport){
 function renderHighlight(){
   const band = el('highlight-band');
   const seg = getCurrentSegment();
-  if(!pdfDoc || !seg){ band.style.display='none'; el('undo-fab').style.display='none'; return; }
+  if(!pdfDoc || !seg){ band.style.display='none'; return; }
   band.style.top=(seg.top*100)+'%'; band.style.height=((seg.bottom-seg.top)*100)+'%';
   band.style.display = project.highlightVisible ? 'block' : 'none';
-  el('undo-fab').style.display='flex';
 }
 window.addEventListener('resize', ()=>{ if(pdfDoc) renderPage(currentPage); });
 
