@@ -38,7 +38,7 @@
   .toolbar-row{ display:flex; align-items:center; gap:8px; }
   .pagenav{ display:flex; align-items:center; gap:6px; }
   button.nav{ width:30px; height:30px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink); font-size:14px; cursor:pointer; }
-  .pagelabel{ font-size:13px; color:var(--ink-muted); min-width:52px; text-align:center; }
+  .pagelabel{ font-size:13px; color:var(--accent); min-width:52px; text-align:center; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
   .tool-btn{ font-size:12px; padding:6px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink-muted); cursor:pointer; white-space:nowrap; }
   .tool-btn.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
   .zoom-group{ display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -190,6 +190,17 @@
 </div>
 
 <input type="file" id="file-input" accept="application/pdf">
+
+<dialog id="page-dialog">
+  <h3>페이지 이동</h3>
+  <p class="hint">이동할 페이지 번호를 입력하세요 (1 ~ <span id="page-dialog-max">1</span>)</p>
+  <label>페이지 번호</label>
+  <input type="number" id="page-dialog-input" min="1" value="1">
+  <div class="dialog-actions">
+    <button class="cancel" id="page-dialog-cancel">취소</button>
+    <button class="confirm" id="page-dialog-confirm">이동</button>
+  </div>
+</dialog>
 
 <dialog id="manual-dialog">
   <h3>단 수 빠르게 입력</h3>
@@ -419,8 +430,28 @@ async function renderPage(n){
   }
   renderHighlight();
 }
-el('prev-page').onclick=async()=>{ if(currentPage>1){ currentPage--; await renderPage(currentPage);} };
-el('next-page').onclick=async()=>{ if(currentPage<numPages){ currentPage++; await renderPage(currentPage);} };
+el('prev-page').onclick=async()=>{ if(currentPage>1) await goToPage(currentPage-1); };
+el('next-page').onclick=async()=>{ if(currentPage<numPages) await goToPage(currentPage+1); };
+async function goToPage(n){
+  n = Math.min(Math.max(1,n), numPages);
+  if(n===currentPage) return;
+  currentPage = n;
+  await renderPage(currentPage);
+}
+el('page-label').onclick=()=>{
+  if(!pdfDoc) return;
+  el('page-dialog-max').textContent = numPages;
+  const input = el('page-dialog-input');
+  input.max = numPages; input.value = currentPage;
+  el('page-dialog').showModal();
+};
+el('page-dialog-cancel').onclick=()=>el('page-dialog').close();
+el('page-dialog-confirm').onclick=()=>{
+  let v = parseInt(el('page-dialog-input').value,10);
+  if(!v || v<1) v=1; if(v>numPages) v=numPages;
+  el('page-dialog').close();
+  goToPage(v);
+};
 
 /* ---------------- zoom ---------------- */
 function updateZoomLabel(){ el('zoom-label').textContent = Math.round((project.zoom||1)*100)+'%'; }
@@ -541,10 +572,17 @@ holder.addEventListener('pointerup', async (e)=>{
   if(longPressFired){ longPressFired=false; pointerDownPos=null; return; }
   if(pointerDownPos){
     const dx=e.clientX-pointerDownPos.x, dy=e.clientY-pointerDownPos.y;
+    const adx=Math.abs(dx), ady=Math.abs(dy);
     if(Math.hypot(dx,dy) < 8){
       const rect = el('pdf-canvas').getBoundingClientRect();
       const yFrac = (e.clientY-rect.top)/rect.height;
       handleTap(yFrac);
+    } else if(adx > 55 && adx > ady*1.5){
+      const cs = el('canvas-scroll');
+      const atLeftEdge = cs.scrollLeft <= 2;
+      const atRightEdge = cs.scrollLeft >= (cs.scrollWidth - cs.clientWidth - 2);
+      if(dx < 0 && atRightEdge && currentPage < numPages){ goToPage(currentPage+1); }
+      else if(dx > 0 && atLeftEdge && currentPage > 1){ goToPage(currentPage-1); }
     }
   }
   pointerDownPos=null;
