@@ -239,7 +239,7 @@ let project = {
   rowCount: 0,
   targetRows: null,
   counters: [],
-  pages: {},        // n -> {segments:[{top,bottom} 0..1], startIndex, region, scroll:{x,y}}
+  pages: {},        // n -> {segments:[{top,bottom} 0..1], localIndex, region, scroll:{x,y}}
   pdfName: null,
   zoom: 1,
   highlightVisible: true,
@@ -338,7 +338,6 @@ function updateRowUI(){
     el('progress-track').style.display='none';
     el('row-caption').textContent = '단 · 탭하면 +1';
   }
-  renderHighlight();
 }
 function renderPatternCounters(){
   const wrap = el('pattern-counters'); wrap.innerHTML='';
@@ -670,7 +669,7 @@ function getCurrentSegment(){
   const st = getPageState(currentPage);
   if(!st.segments || !st.segments.length) return null;
   const n = st.segments.length;
-  const localIdx = Math.min(Math.max(project.rowCount-(st.startIndex||0),0), n-1);
+  const localIdx = Math.min(Math.max(st.localIndex||0,0), n-1);
   return st.segments[localIdx];
 }
 function handleTap(yFrac){
@@ -680,9 +679,13 @@ function handleTap(yFrac){
     showBanner('이 페이지에서 사용할 영역을 화면에서 드래그로 선택하세요.', true);
     return;
   }
-  const seg = getCurrentSegment();
+  const n = st.segments.length;
+  const curIdx = Math.min(Math.max(st.localIndex||0,0), n-1);
+  const seg = st.segments[curIdx];
   const center = (seg.top+seg.bottom)/2;
-  if(yFrac < center){ changeRow(-1); } else { changeRow(1); }
+  const newIdx = yFrac < center ? curIdx-1 : curIdx+1;
+  st.localIndex = Math.min(Math.max(newIdx,0), n-1);
+  renderHighlight(); saveProject();
 }
 function jumpToPosition(yFrac){
   const st = getPageState(currentPage);
@@ -693,8 +696,8 @@ function jumpToPosition(yFrac){
     st.segments.forEach((s,i)=>{ const c=(s.top+s.bottom)/2; const d=Math.abs(yFrac-c); if(d<bestDist){ bestDist=d; best=i; } });
     idx=best;
   }
-  project.rowCount = Math.max(0, (st.startIndex||0) + idx);
-  updateRowUI(); saveProject();
+  st.localIndex = idx;
+  renderHighlight(); saveProject();
   showToast('여기로 이동');
 }
 
@@ -803,7 +806,7 @@ el('calib-confirm').onclick=()=>{
   const region=calibRegion;
   const rowH=(region.y1-region.y0)/calibCount;
   const segments=[]; for(let i=0;i<calibCount;i++) segments.push({top:region.y0+i*rowH, bottom:region.y0+(i+1)*rowH});
-  st.segments=segments; st.startIndex=project.rowCount; st.region=region;
+  st.segments=segments; st.localIndex=0; st.region=region;
   const doneLabel = calibCount + '단';
   cancelCalib(); hideBanner();
   renderHighlight(); saveProject();
@@ -845,7 +848,7 @@ async function tryAutoDetectText(page, viewport){
     for(let i=0;i<raw.length-1;i++){ const mid=(raw[i].bottom+raw[i+1].top)/2; raw[i].bottom=mid; raw[i+1].top=mid; }
     raw[0].top=0; raw[raw.length-1].bottom=viewport.height;
     st.segments = raw.map(r=>({top:r.top/viewport.height, bottom:r.bottom/viewport.height}));
-    st.startIndex = project.rowCount;
+    st.localIndex = 0;
     hideBanner();
     showToast(`${st.segments.length}단 인식됨 (필요하면 영역 재지정으로 수정 가능)`);
     saveProject();
