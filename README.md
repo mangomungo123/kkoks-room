@@ -239,11 +239,11 @@ let project = {
   rowCount: 0,
   targetRows: null,
   counters: [],
-  pages: {},        // n -> {segments:[{top,bottom} 0..1], startIndex, region}
+  pages: {},        // n -> {segments:[{top,bottom} 0..1], startIndex, region, scroll:{x,y}}
   pdfName: null,
-  pdfBase64: null,
   zoom: 1,
-  highlightVisible: true
+  highlightVisible: true,
+  currentPage: 1
 };
 
 let pdfDoc=null, currentPage=1, numPages=1, curViewport=null;
@@ -270,18 +270,48 @@ function positionFixedOverlays(){
 window.addEventListener('resize', positionFixedOverlays);
 window.addEventListener('orientationchange', positionFixedOverlays);
 
-/* ---------------- storage ---------------- */
+/* ---------------- storage: IndexedDB(PDF binary) + localStorage(project state) ----------------
+   (works standalone in Safari / home-screen app — not dependent on the Claude chat runtime) */
+const DB_NAME='knittingCounterDB', DB_STORE='files', META_KEY='kc_project_meta_v1';
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    if(!window.indexedDB){ reject(new Error('no indexeddb')); return; }
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(DB_STORE); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function idbSet(key, value){
+  const db = await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction(DB_STORE,'readwrite');
+    tx.objectStore(DB_STORE).put(value, key);
+    tx.oncomplete = ()=>resolve(true);
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function idbGet(key){
+  const db = await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction(DB_STORE,'readonly');
+    const req = tx.objectStore(DB_STORE).get(key);
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+
 async function loadProject(){
   try{
-    const res = await window.storage.get('project', false);
-    if(res && res.value){ project = Object.assign(project, JSON.parse(res.value)); }
-  }catch(e){}
+    const raw = localStorage.getItem(META_KEY);
+    if(raw){ project = Object.assign(project, JSON.parse(raw)); }
+  }catch(e){ console.error('설정 불러오기 실패', e); }
 }
 let saveTimer=null;
 function saveProject(){
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async ()=>{
-    try{ await window.storage.set('project', JSON.stringify(project), false); }
+  saveTimer = setTimeout(()=>{
+    try{ localStorage.setItem(META_KEY, JSON.stringify(project)); }
     catch(e){ console.error('저장 실패', e); }
   }, 150);
 }
@@ -376,25 +406,14 @@ el('file-input').onchange = async (e)=>{
   const buf = await file.arrayBuffer();
   await openPdfFromArrayBuffer(buf.slice(0));
   project.pdfName=file.name;
-  try{
-    const b64=arrayBufferToBase64(buf);
-    project.pdfBase64 = (b64.length<4500000) ? b64 : null;
-  }catch(err){ project.pdfBase64=null; }
   saveProject();
+  try{ await idbSet('pdfFile', buf.slice(0)); }
+  catch(err){ console.error('PDF 저장 실패', err); }
 };
-function arrayBufferToBase64(buffer){
-  let binary=''; const bytes=new Uint8Array(buffer); const chunk=0x8000;
-  for(let i=0;i<bytes.length;i+=chunk){ binary+=String.fromCharCode.apply(null, bytes.subarray(i,i+chunk)); }
-  return btoa(binary);
-}
-function base64ToArrayBuffer(b64){
-  const binary=atob(b64); const bytes=new Uint8Array(binary.length);
-  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-  return bytes.buffer;
-}
 async function openPdfFromArrayBuffer(buf){
   pdfDoc = await pdfjsLib.getDocument({data:buf}).promise;
-  numPages = pdfDoc.numPages; currentPage=1;
+  numPages = pdfDoc.numPages;
+  currentPage = (project.currentPage && project.currentPage>=1 && project.currentPage<=numPages) ? project.currentPage : 1;
   el('empty-state').style.display='none';
   el('page-toolbar').style.display='flex';
   el('canvas-scroll').style.display='flex';
@@ -419,12 +438,31 @@ async function renderPage(n){
   el('page-label').textContent = `${n} / ${numPages}`;
   cancelCalib(); exitSelecting(); hideBanner();
 
+  project.currentPage = n; saveProject();
+
   const st = getPageState(n);
   if(!st.segments){
     await tryAutoDetectText(page, viewport);
   }
   renderHighlight();
+
+  const cs = el('canvas-scroll');
+  if(st.scroll){
+    requestAnimationFrame(()=>{ cs.scrollLeft = st.scroll.x; cs.scrollTop = st.scroll.y; });
+  } else {
+    cs.scrollLeft = 0; cs.scrollTop = 0;
+  }
 }
+let scrollSaveTimer=null;
+el('canvas-scroll').addEventListener('scroll', ()=>{
+  clearTimeout(scrollSaveTimer);
+  scrollSaveTimer = setTimeout(()=>{
+    const st = getPageState(currentPage);
+    const cs = el('canvas-scroll');
+    st.scroll = { x: cs.scrollLeft, y: cs.scrollTop };
+    saveProject();
+  }, 300);
+});
 el('prev-page').onclick=async()=>{ if(currentPage>1) await goToPage(currentPage-1); };
 el('next-page').onclick=async()=>{ if(currentPage<numPages) await goToPage(currentPage+1); };
 async function goToPage(n){
@@ -830,10 +868,10 @@ window.addEventListener('resize', ()=>{ if(pdfDoc) renderPage(currentPage); });
 (async function init(){
   await loadProject();
   updateRowUI(); renderPatternCounters();
-  if(project.pdfBase64){
-    try{ await openPdfFromArrayBuffer(base64ToArrayBuffer(project.pdfBase64)); }
-    catch(e){ console.error('저장된 PDF 복원 실패', e); }
-  }
+  try{
+    const buf = await idbGet('pdfFile');
+    if(buf){ await openPdfFromArrayBuffer(buf); }
+  }catch(e){ console.error('저장된 PDF 복원 실패', e); }
   positionFixedOverlays();
 })();
 </script>
